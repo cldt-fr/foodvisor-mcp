@@ -65,6 +65,7 @@ ${errorBlock}
 <form method="POST" action="/authorize">
   <label for="refresh_token">Foodvisor refresh token</label>
   <textarea id="refresh_token" name="refresh_token" required placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."></textarea>
+  ${hidden("response_type", "code")}
   ${hidden("client_id", opts.client_id)}
   ${hidden("redirect_uri", opts.redirect_uri)}
   ${hidden("state", opts.state)}
