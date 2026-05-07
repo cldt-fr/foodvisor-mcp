@@ -4,6 +4,15 @@ import { AuthError, parseRefreshTokenFromHeader } from "./auth/extract.js";
 import { env } from "./env.js";
 import { FoodvisorApiError } from "./foodvisor/client.js";
 import { createMcpServer } from "./mcp/server.js";
+import {
+  handleAuthorizationServerMetadata,
+  handleAuthorizeGet,
+  handleAuthorizePost,
+  handleProtectedResourceMetadata,
+  handleRegister,
+  handleToken,
+} from "./oauth/handlers.js";
+import { publicOrigin } from "./oauth/metadata.js";
 
 const MCP_PATH = "/mcp";
 
@@ -11,11 +20,13 @@ function sendJson(
   res: http.ServerResponse,
   status: number,
   payload: unknown,
+  extraHeaders: Record<string, string> = {},
 ): void {
   const body = JSON.stringify(payload);
   res.writeHead(status, {
     "Content-Type": "application/json",
     "Content-Length": Buffer.byteLength(body),
+    ...extraHeaders,
   });
   res.end(body);
 }
@@ -35,11 +46,30 @@ async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
   }
 }
 
+function unauthorized(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  message: string,
+): void {
+  const origin = publicOrigin(req);
+  const wwwAuth = `Bearer realm="foodvisor-mcp", resource_metadata="${origin}/.well-known/oauth-protected-resource", error="invalid_token", error_description="${message.replace(/"/g, "'")}"`;
+  sendJson(res, 401, { error: message }, { "WWW-Authenticate": wwwAuth });
+}
+
 async function handleMcp(
   req: http.IncomingMessage,
   res: http.ServerResponse,
 ): Promise<void> {
-  const ctx = parseRefreshTokenFromHeader(req.headers.authorization);
+  let ctx;
+  try {
+    ctx = parseRefreshTokenFromHeader(req.headers.authorization);
+  } catch (err) {
+    if (err instanceof AuthError) {
+      unauthorized(req, res, err.message);
+      return;
+    }
+    throw err;
+  }
 
   const body = req.method === "POST" ? await readJsonBody(req) : undefined;
 
@@ -73,6 +103,41 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (
+      url.pathname === "/.well-known/oauth-protected-resource" &&
+      req.method === "GET"
+    ) {
+      handleProtectedResourceMetadata(req, res);
+      return;
+    }
+    if (
+      url.pathname === "/.well-known/oauth-authorization-server" &&
+      req.method === "GET"
+    ) {
+      handleAuthorizationServerMetadata(req, res);
+      return;
+    }
+    if (url.pathname === "/register") {
+      await handleRegister(req, res);
+      return;
+    }
+    if (url.pathname === "/authorize") {
+      if (req.method === "GET") {
+        await handleAuthorizeGet(req, res, url);
+        return;
+      }
+      if (req.method === "POST") {
+        await handleAuthorizePost(req, res);
+        return;
+      }
+      sendJson(res, 405, { error: "method_not_allowed" });
+      return;
+    }
+    if (url.pathname === "/token") {
+      await handleToken(req, res);
+      return;
+    }
+
     if (url.pathname !== MCP_PATH) {
       sendJson(res, 404, { error: "Not found" });
       return;
@@ -85,7 +150,11 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (err instanceof AuthError) {
-      sendJson(res, err.status, { error: err.message });
+      if (err.status === 401) {
+        unauthorized(req, res, err.message);
+      } else {
+        sendJson(res, err.status, { error: err.message });
+      }
       return;
     }
     if (err instanceof FoodvisorApiError) {
@@ -102,5 +171,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(env.PORT, () => {
-  console.log(`[foodvisor-mcp] listening on :${env.PORT}${MCP_PATH}`);
+  console.log(
+    `[foodvisor-mcp] listening on :${env.PORT}${MCP_PATH} (OAuth ready)`,
+  );
 });
