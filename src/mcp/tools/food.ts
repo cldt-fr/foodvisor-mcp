@@ -33,23 +33,26 @@ export function registerFoodTools(server: McpServer, ctx: UserContext): void {
       inputSchema: {
         query: z.string().min(1).describe("Free-text search, e.g. 'pâtes barilla'"),
         meal_type: mealTypeSchema
-          .optional()
+          .nullish()
           .describe(
             "Meal context to bias ranking. Defaults to the meal slot matching the current local time.",
           ),
         meal_date: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional()
+          .nullish()
           .describe("Optional meal date YYYY-MM-DD to bias ranking"),
-        limit: z.number().int().min(1).max(50).optional().default(25),
-        country: z.string().length(2).optional().default("FR"),
+        limit: z.number().int().min(1).max(50).nullish(),
+        country: z.string().length(2).nullish(),
       },
     },
     async (args) => {
       const res = await searchFood(ctx, {
-        ...args,
+        query: args.query,
         meal_type: args.meal_type ?? defaultMealType(),
+        meal_date: args.meal_date ?? undefined,
+        limit: args.limit ?? 25,
+        country: args.country ?? "FR",
       });
       const compact = res.results.map((r) => ({
         food_id: r.food_id,

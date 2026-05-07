@@ -40,21 +40,21 @@ const foodEntrySchema = z.object({
     .number()
     .positive()
     .describe(
-      "Reference quantity for the chosen unit. Default to 100 with unit_id 'unit_g' if unsure.",
+      "Quantity in grams (Foodvisor stores quantities in grams). Default to 100 if unsure.",
     ),
   unit_id: z
     .string()
     .min(1)
-    .default("unit_g")
+    .nullish()
     .describe(
-      "Unit identifier. Use unit_default.unit_id from search_food when available, else 'unit_g'.",
+      "Unit identifier (display hint). Use unit_default.unit_id from search_food when available, else 'unit_g'.",
     ),
   serving_amount: z
     .number()
     .positive()
-    .default(1)
+    .nullish()
     .describe(
-      "Multiplier applied to quantity. Final grams = quantity * g_per_unit * serving_amount.",
+      "Multiplier applied to quantity. Final grams = quantity * serving_amount.",
     ),
 });
 
@@ -77,11 +77,11 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
         local_id: randomUUID().toUpperCase(),
         created_at: now,
         modified_at: now,
-        serving_amount: f.serving_amount,
+        serving_amount: f.serving_amount ?? 1,
         main_food: {
           food_id: f.food_id,
           quantity: f.quantity,
-          unit_id: f.unit_id,
+          unit_id: f.unit_id ?? "unit_g",
         },
       }));
 
@@ -114,14 +114,16 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
     {
       title: "List logged meals",
       description:
-        "Return logged meals (with sub_foods, food_ids, quantities) on a date range. Use get_food_details to enrich food_ids with nutrition data.",
+        "Return logged meals (with sub_foods, food_ids, quantities) on a date range. Pass only `from` (and omit `to`) for a single-day query. Use get_food_details to enrich food_ids with nutrition data.",
       inputSchema: {
         from: dateSchema,
-        to: dateSchema,
+        to: dateSchema
+          .nullish()
+          .describe("Optional end date YYYY-MM-DD; defaults to `from`"),
       },
     },
     async ({ from, to }) => {
-      const res = await listMeals(ctx, { from, to });
+      const res = await listMeals(ctx, { from, to: to ?? from });
       return {
         content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
       };

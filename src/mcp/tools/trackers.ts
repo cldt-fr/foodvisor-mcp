@@ -16,14 +16,16 @@ export function registerTrackerTools(
     {
       title: "Hydration log",
       description:
-        "Returns the daily water intake (ml) on a date range. Days without entries are omitted.",
+        "Returns the daily water intake (ml) on a date range. Days without entries are omitted. Pass only `start` (omit `end`) for a single-day query.",
       inputSchema: {
         start: dateSchema,
-        end: dateSchema,
+        end: dateSchema
+          .nullish()
+          .describe("Optional end date YYYY-MM-DD; defaults to `start`"),
       },
     },
     async ({ start, end }) => {
-      const res = await getWaterLog(ctx, { start, end });
+      const res = await getWaterLog(ctx, { start, end: end ?? start });
       return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
     },
   );

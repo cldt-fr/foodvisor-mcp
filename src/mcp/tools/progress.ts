@@ -74,7 +74,7 @@ export function registerProgressTools(
         date: z
           .string()
           .regex(/^\d{4}-\d{2}-\d{2}$/)
-          .optional()
+          .nullish()
           .describe("Reference date YYYY-MM-DD; defaults to today (server local)"),
       },
     },
