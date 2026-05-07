@@ -3,6 +3,7 @@ import http from "node:http";
 import { AuthError, parseRefreshTokenFromHeader } from "./auth/extract.js";
 import { env } from "./env.js";
 import { FoodvisorApiError } from "./foodvisor/client.js";
+import { renderLanding } from "./landing.js";
 import { createMcpServer } from "./mcp/server.js";
 import {
   handleAuthorizationServerMetadata,
@@ -100,6 +101,17 @@ const server = http.createServer(async (req, res) => {
 
     if (url.pathname === "/health" && req.method === "GET") {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if ((url.pathname === "/" || url.pathname === "") && req.method === "GET") {
+      const html = renderLanding(req);
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Length": Buffer.byteLength(html),
+        "Cache-Control": "public, max-age=300",
+      });
+      res.end(html);
       return;
     }
 
