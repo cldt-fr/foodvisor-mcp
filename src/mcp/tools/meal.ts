@@ -50,7 +50,7 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
     {
       title: "Log a meal in Foodvisor",
       description:
-        "Add foods to a meal slot (breakfast/lunch/dinner/snack/custom_*) on a given date. Foods must reference food_ids resolved via search_food. Existing entries on the same date+meal_type are appended (Foodvisor merges).",
+        "Add foods to a meal slot (breakfast/lunch/dinner/snack/custom_*) on a given date. Foods must reference food_ids resolved via search_food. Existing entries on the same date+meal_type are preserved: this tool fetches them first and re-sends them alongside the new ones (Foodvisor's POST /meal otherwise overwrites the slot).",
       inputSchema: {
         meal_date: dateSchema.describe("Date of the meal, YYYY-MM-DD"),
         meal_type: mealTypeSchema,
@@ -59,7 +59,7 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
     },
     async ({ meal_date, meal_type, foods }) => {
       const now = new Date().toISOString();
-      const sub_foods: MealSubFood[] = foods.map((f) => ({
+      const newEntries: MealSubFood[] = foods.map((f) => ({
         local_id: randomUUID().toUpperCase(),
         created_at: now,
         modified_at: now,
@@ -70,6 +70,15 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
           unit_id: "unit_g",
         },
       }));
+
+      const existing = await listMeals(ctx, { from: meal_date, to: meal_date });
+      const existingSlot = existing.macro_meals.find(
+        (m) => m.meal_date === meal_date && m.meal_type === meal_type,
+      );
+      const sub_foods: MealSubFood[] = [
+        ...(existingSlot?.sub_foods ?? []),
+        ...newEntries,
+      ];
 
       const res = await upsertMeals(ctx, {
         macro_meals: [{ meal_date, meal_type, sub_foods }],
@@ -83,7 +92,8 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
                 ok: true,
                 meal_date,
                 meal_type,
-                logged_count: foods.length,
+                added_count: foods.length,
+                preserved_existing_count: existingSlot?.sub_foods.length ?? 0,
                 modified_at: res.modified_at,
               },
               null,
