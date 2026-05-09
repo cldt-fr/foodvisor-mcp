@@ -195,10 +195,10 @@ export function registerMealTools(server: McpServer, ctx: UserContext): void {
 
       const targets = {
         calories: profile.max_calories,
-        proteins_g: profile.max_proteins,
-        lipids_g: profile.max_lipids,
-        carbs_g: profile.max_carbs,
-        fibers_g: profile.max_fibers,
+        proteins_g: round(profile.max_proteins / KCAL_PER_G.proteins),
+        lipids_g: round(profile.max_lipids / KCAL_PER_G.lipids),
+        carbs_g: round(profile.max_carbs / KCAL_PER_G.carbs),
+        fibers_g: round(profile.max_fibers / KCAL_PER_G.fibers),
       };
 
       return {
