@@ -291,18 +291,37 @@ function aggregateDay(
   };
 }
 
+// Foodvisor stores proteins_100g / lipids_100g / carbs_100g / fibers_100g as
+// kcal per 100 g of food (despite the misleading suffix). Atwater factors:
+// protein 4, fat 9, carbs 4, fiber 2.
+const KCAL_PER_G = { proteins: 4, lipids: 9, carbs: 4, fibers: 2 } as const;
+
+function macrosGramsPer100g(food: FoodInfo): {
+  proteins: number;
+  lipids: number;
+  carbs: number;
+  fibers: number;
+} {
+  return {
+    proteins: food.proteins_100g / KCAL_PER_G.proteins,
+    lipids: food.lipids_100g / KCAL_PER_G.lipids,
+    carbs: food.carbs_100g / KCAL_PER_G.carbs,
+    fibers: (food.fibers_100g ?? 0) / KCAL_PER_G.fibers,
+  };
+}
+
 function dataQualityWarning(food: FoodInfo): string | null {
-  const macroSum =
-    food.proteins_100g + food.lipids_100g + food.carbs_100g + (food.fibers_100g ?? 0);
-  if (macroSum > 110) {
-    return `Macros sum to ${macroSum.toFixed(0)}g per 100g of food — Foodvisor source data is likely inflated for this item.`;
+  const m = macrosGramsPer100g(food);
+  const gramsPer100g = m.proteins + m.lipids + m.carbs + m.fibers;
+  if (gramsPer100g > 110) {
+    return `Macros + fibers sum to ${gramsPer100g.toFixed(0)}g per 100g — Foodvisor source data looks inflated.`;
   }
-  const computedKcal =
-    food.proteins_100g * 4 + food.lipids_100g * 9 + food.carbs_100g * 4;
+  const macroKcal =
+    food.proteins_100g + food.lipids_100g + food.carbs_100g;
   if (food.cal_100g > 0) {
-    const drift = Math.abs(computedKcal - food.cal_100g) / food.cal_100g;
-    if (drift > 0.25) {
-      return `Listed calories (${food.cal_100g.toFixed(0)} kcal/100g) don't match macros (~${computedKcal.toFixed(0)} kcal/100g). Foodvisor source data is inconsistent.`;
+    const drift = Math.abs(macroKcal - food.cal_100g) / food.cal_100g;
+    if (drift > 0.4) {
+      return `Listed calories (${food.cal_100g.toFixed(0)} kcal/100g) don't match macros (~${macroKcal.toFixed(0)} kcal/100g). Foodvisor source data is inconsistent.`;
     }
   }
   return null;
@@ -339,6 +358,7 @@ function describeEntry(
     };
   }
   const ratio = grams / 100;
+  const m = macrosGramsPer100g(food);
   const warning = dataQualityWarning(food);
   return {
     food_id: entry.food_id,
@@ -346,27 +366,18 @@ function describeEntry(
     brand: food.brand,
     grams,
     calories: round(food.cal_100g * ratio),
-    proteins_g: round(food.proteins_100g * ratio),
-    lipids_g: round(food.lipids_100g * ratio),
-    carbs_g: round(food.carbs_100g * ratio),
-    fibers_g: round(food.fibers_100g * ratio),
+    proteins_g: round(m.proteins * ratio),
+    lipids_g: round(m.lipids * ratio),
+    carbs_g: round(m.carbs * ratio),
+    fibers_g: round(m.fibers * ratio),
     ...(warning ? { data_quality_warning: warning } : {}),
   };
 }
 
-function gramsForEntry(entry: FlatEntry, food: FoodInfo | undefined): number {
-  // quantity is expressed in `unit_id`; convert to grams via g_per_unit.
-  // unit_g always converts 1:1; for foreign units, look up the food's units list.
-  if (entry.unit_id === "unit_g") {
-    return entry.quantity * entry.serving_amount;
-  }
-  const gPerUnit = food?.units.find((u) => u.unit_id === entry.unit_id)
-    ?.g_per_unit;
-  if (gPerUnit === undefined) {
-    // Fallback: assume grams. Better than producing NaN, but flag via missing_food_details upstream.
-    return entry.quantity * entry.serving_amount;
-  }
-  return entry.quantity * gPerUnit * entry.serving_amount;
+function gramsForEntry(entry: FlatEntry, _food: FoodInfo | undefined): number {
+  // Foodvisor stores `quantity` in grams regardless of unit_id (which is just
+  // the user-facing unit picker). Final grams = quantity * serving_amount.
+  return entry.quantity * entry.serving_amount;
 }
 
 function round(n: number): number {
@@ -394,11 +405,12 @@ function computeTotals(
     if (!food) continue;
     const g = gramsForEntry(e, food);
     const ratio = g / 100;
+    const m = macrosGramsPer100g(food);
     cal += food.cal_100g * ratio;
-    p += food.proteins_100g * ratio;
-    l += food.lipids_100g * ratio;
-    c += food.carbs_100g * ratio;
-    f += food.fibers_100g * ratio;
+    p += m.proteins * ratio;
+    l += m.lipids * ratio;
+    c += m.carbs * ratio;
+    f += m.fibers * ratio;
   }
   return {
     calories: round(cal),
