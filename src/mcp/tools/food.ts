@@ -29,7 +29,7 @@ export function registerFoodTools(server: McpServer, ctx: UserContext): void {
     {
       title: "Search Foodvisor catalog",
       description:
-        "Search the Foodvisor food catalog by free-text query. Returns foods with their food_id, default unit, calories per 100g and image. Use this before log_meal to resolve foods to log.",
+        "Search the Foodvisor food catalog by free-text query. Returns foods with their food_id, calories per 100g, and `default_grams` (grams in one default serving — use this as the natural quantity if the user doesn't specify). Pass grams to log_meal.",
       inputSchema: {
         query: z.string().min(1).describe("Free-text search, e.g. 'pâtes barilla'"),
         meal_type: mealTypeSchema
@@ -54,18 +54,23 @@ export function registerFoodTools(server: McpServer, ctx: UserContext): void {
         limit: args.limit ?? 25,
         country: args.country ?? "FR",
       });
-      const compact = res.results.map((r) => ({
-        food_id: r.food_id,
-        display_name: r.display_name,
-        brand: r.brand,
-        cal_100g: r.cal_100g,
-        unit_name: r.unit_name,
-        unit_default: r.unit_default,
-        is_liquid: r.is_liquid,
-        fv_grade: r.fv_grade,
-        image_url: r.image_url,
-        database: r.database,
-      }));
+      const compact = res.results.map((r) => {
+        const default_grams =
+          r.unit_default.g_per_unit * r.unit_default.unit_qty;
+        return {
+          food_id: r.food_id,
+          display_name: r.display_name,
+          brand: r.brand,
+          cal_100g: r.cal_100g,
+          unit_name: r.unit_name,
+          default_grams,
+          default_calories: Math.round(r.cal_100g * (default_grams / 100)),
+          is_liquid: r.is_liquid,
+          fv_grade: r.fv_grade,
+          image_url: r.image_url,
+          database: r.database,
+        };
+      });
       return {
         content: [
           {
